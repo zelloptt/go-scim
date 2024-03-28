@@ -133,6 +133,27 @@ Skip:
 	return string(d.data[start+1 : end-1]), nil
 }
 
+func (d *deserializeState) getPropertyDotNamesByPath(path string) []string {
+	var names []string
+	var findComplexPath func(child prop.Property) bool
+
+	findComplexPath = func(child prop.Property) bool {
+		if child.Attribute().Path() == path {
+			// Put the leaf value in the first element of the array
+			names = append(names, child.Attribute().Name())
+			return true
+		}
+		if child.CountChildren() > 0 && child.FindChild(findComplexPath) != nil {
+			// Put the rest of the names in a stack order
+			names = append(names, child.Attribute().Name())
+			return true
+		}
+		return false
+	}
+	d.navigator.Current().FindChild(findComplexPath)
+	return names
+}
+
 // Parses a top level or embedded JSON object. When parsing a top level object, allowNull shall be false as top level
 // object does not correspond to any field name and hence cannot be null; when parsing an embedded object, allowNull may
 // be true. This method expects '{' (appears as scanBeginObject) to be the current byte
@@ -151,6 +172,7 @@ func (d *deserializeState) parseComplexProperty(allowNull bool) error {
 kvs:
 	for d.opCode != scanEndObject {
 		// Focus on the property that corresponds to the field name
+		propertyDepth := 0
 		var (
 			p   prop.Property
 			err error
@@ -161,8 +183,29 @@ kvs:
 				return err
 			}
 			p = d.navigator.Dot(attrName).Current()
-			if d.navigator.Error() != nil {
-				return d.navigator.Error()
+			if err := d.navigator.Error(); err == nil {
+				// Navigator changes focus only if there was no error
+				propertyDepth++
+			} else {
+				// parseFieldName() may return a complex dot-separated path that navigator.Dot() fails to accept
+				// parse such path and save the simple attribute names in stack order
+				d.navigator.ClearError()
+				names := d.getPropertyDotNamesByPath(attrName)
+				if len(names) == 0 {
+					return err
+				}
+				for i := range names {
+					p = d.navigator.Dot(names[len(names)-i-1]).Current()
+					if d.navigator.Error() == nil {
+						propertyDepth++
+						continue
+					}
+					// in case of Navigator error - restore the focus and return the initial error
+					for i := 0; i < propertyDepth; i++ {
+						d.navigator.Retract()
+					}
+					return err
+				}
 			}
 		}
 
@@ -177,7 +220,9 @@ kvs:
 		}
 
 		// Exit focus on the field value property
-		d.navigator.Retract()
+		for i := 0; i < propertyDepth; i++ {
+			d.navigator.Retract()
+		}
 
 		// Fast forward to the next field name/value pair, or exit the loop.
 	fastForward:
