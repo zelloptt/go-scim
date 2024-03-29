@@ -2,6 +2,7 @@ package crud
 
 import (
 	"fmt"
+
 	"github.com/imulab/go-scim/pkg/v2/crud/expr"
 	"github.com/imulab/go-scim/pkg/v2/prop"
 	"github.com/imulab/go-scim/pkg/v2/spec"
@@ -20,7 +21,16 @@ func Add(resource *prop.Resource, path string, value interface{}) error {
 		return err
 	}
 
-	return defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator) error {
+	isFound := false
+	err = defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator) error {
+		isFound = true
+		return nav.Add(value).Error()
+	})
+	if err != nil || isFound {
+		return err
+	}
+	// If not found - try to add a new property using the eq filter operator
+	return addByEqualOperatorTraverse(value, resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator, value interface{}) error {
 		return nav.Add(value).Error()
 	})
 }
