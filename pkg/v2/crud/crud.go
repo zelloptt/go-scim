@@ -29,8 +29,8 @@ func Add(resource *prop.Resource, path string, value interface{}) error {
 	if err != nil || isFound {
 		return err
 	}
-	// If not found - try to add a new property using the eq filter operator
-	return addByEqualOperatorTraverse(value, resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator, value interface{}) error {
+	// If not found - add a new property using the values from eq filter operator
+	return addByEqFilterTraverse(value, resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator, value interface{}) error {
 		return nav.Add(value).Error()
 	})
 }

@@ -10,7 +10,7 @@ import (
 )
 
 type traverseCb func(nav prop.Navigator) error
-type traverseAddAttributeCb func(nav prop.Navigator, value interface{}) error
+type traverseUpdatedValueCb func(nav prop.Navigator, value interface{}) error
 
 func defaultTraverse(property prop.Property, query *expr.Expression, callback traverseCb) error {
 	tr := traverser{
@@ -21,13 +21,32 @@ func defaultTraverse(property prop.Property, query *expr.Expression, callback tr
 	return tr.traverse(query)
 }
 
-func addByEqualOperatorTraverse(value interface{}, property prop.Property, query *expr.Expression, callback traverseAddAttributeCb) error {
-	// A single 'Eq' filter can be used to add a new attribute
+// A single 'Eq' filter can be used to add a new attribute.
+// This traverse calls the callback with the modified value using such filter.
+// The operation like:
+//
+//	{
+//		"op": "add",
+//		"path": "emails[type eq \"work\"].value",
+//		"value": "foo@bar.com"
+//	}
+//
+// Adds a new property:
+//
+//	"emails": [
+//		{
+//			"type": "work",
+//			"value": "foo@bar.com"
+//		}
+//	]
+//
+// It returns error if there is already a sub property by this filter
+func addByEqFilterTraverse(value interface{}, property prop.Property, query *expr.Expression, callback traverseUpdatedValueCb) error {
 	return traverser{
-		value:                value,
-		addByEqual:           true,
+		valueByEqFilter:      value,
+		addByEqFilter:        true,
 		nav:                  prop.Navigate(property),
-		callbackAddAttribute: callback,
+		callbackUpdatedValue: callback,
 		elementStrategy:      selectAllStrategy,
 	}.traverse(query)
 }
@@ -41,64 +60,27 @@ func primaryOrFirstTraverse(property prop.Property, query *expr.Expression, call
 }
 
 type traverser struct {
-	addByEqual           bool
-	value                interface{}            // value to be updated using the Eq fiter
+	addByEqFilter        bool                   // true if valueByEqFilter should be updated by the Eq filter
+	valueByEqFilter      interface{}            // value to be updated using the Eq fiter
 	nav                  prop.Navigator         // stateful navigator for the resource being traversed
 	callback             traverseCb             // callback function to be invoked when target is reached
-	callbackAddAttribute traverseAddAttributeCb // callback function to be invoked when target is reached
+	callbackUpdatedValue traverseUpdatedValueCb // callback function to be invoked with an updated value when target is reached
 	elementStrategy      elementStrategy        // strategy to select element properties to traverse for multiValued properties
-}
-
-func (t traverser) invokeCallback(nav prop.Navigator, value interface{}) error {
-	if t.callbackAddAttribute != nil {
-		if err := t.callbackAddAttribute(nav, value); err != nil {
-			return err
-		}
-	}
-	if t.callback != nil {
-		if err := t.callback(nav); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (t traverser) traverse(query *expr.Expression) error {
 	if query == nil {
-		return t.invokeCallback(t.nav, nil)
+		return t.callback(t.nav)
 	}
 
 	if query.IsRootOfFilter() {
 		if !t.nav.Current().Attribute().MultiValued() {
 			return fmt.Errorf("%w: filter applied to singular attribute", spec.ErrInvalidFilter)
 		}
-		err, isFound := t.traverseQualifiedElements(query)
-		if err != nil {
-			return err
+		if t.addByEqFilter && query.Token() == expr.Eq {
+			return t.updateValueByEqFilter(query)
 		}
-		if !isFound && t.addByEqual && query.Token() == expr.Eq {
-			value := t.value
-			keyValue := ""
-			filterKey := ""
-			filterValue := ""
-			if query.Next() != nil {
-				if query.Next().Next() != nil {
-					return fmt.Errorf("%w: only a single Eq filter is applicable", spec.ErrInvalidFilter)
-				}
-				keyValue = query.Next().Token()
-			}
-			if query.Left() != nil {
-				filterKey = query.Left().Token()
-			}
-			if query.Right() != nil {
-				filterValue = query.Right().Token()
-			}
-			return t.invokeCallback(t.nav, []interface{}{
-				map[string]interface{}{
-					keyValue:  value,
-					filterKey: filterValue,
-				}})
-		}
+		return t.traverseQualifiedElements(query)
 	}
 
 	if t.nav.Current().Attribute().MultiValued() {
@@ -106,6 +88,53 @@ func (t traverser) traverse(query *expr.Expression) error {
 	}
 
 	return t.traverseNext(query)
+}
+
+func (t traverser) updateValueByEqFilter(query *expr.Expression) error {
+	var err error
+	var filterValue interface{}
+	value := t.valueByEqFilter
+	keyValue := ""
+	filterKey := ""
+
+	if query.Left() != nil && query.Left().IsPath() {
+		filterKey = query.Left().Token()
+	}
+	if query.Next() != nil && query.Next().IsPath() {
+		if query.Next().Next() != nil {
+			return fmt.Errorf("%w: only a single Eq filter is applicable", spec.ErrInvalidFilter)
+		}
+		keyValue = query.Next().Token()
+	}
+	if filterKey == "" || keyValue == "" {
+		return fmt.Errorf("%w: filter is not supported", spec.ErrInvalidFilter)
+	}
+	if query.Right() != nil && query.Right().IsLiteral() {
+		// add a child to the copy of the target property to parse allowed type of filterValue
+		propCopy := t.nav.Current().Clone()
+		navCopy := prop.Navigate(propCopy)
+		navCopy.Add(map[string]interface{}{})
+		navCopy.At(0).Dot(filterKey)
+		if navCopy.HasError() {
+			// the child does not have a sub property by filterKey
+			return fmt.Errorf("%w: invalid filter: %w", spec.ErrInvalidFilter, t.nav.Error())
+		}
+		filterValue, err = evaluator{}.normalize(
+			navCopy.Current().Attribute(),
+			query.Right().Token(),
+		)
+		if err != nil {
+			return fmt.Errorf("%w: invalid filter value: %w", spec.ErrInvalidFilter, err)
+		}
+	}
+	if t.callbackUpdatedValue == nil {
+		return fmt.Errorf("%w: callbackUpdatedValue not initiated", spec.ErrInternal)
+	}
+	return t.callbackUpdatedValue(t.nav, []interface{}{
+		map[string]interface{}{
+			keyValue:  value,
+			filterKey: filterValue,
+		}})
 }
 
 func (t traverser) traverseNext(query *expr.Expression) error {
@@ -136,9 +165,8 @@ func (t traverser) traverseSelectedElements(query *expr.Expression) error {
 	})
 }
 
-func (t traverser) traverseQualifiedElements(filter *expr.Expression) (error, bool) {
-	isFound := false
-	err := t.nav.ForEachChild(func(index int, child prop.Property) error {
+func (t traverser) traverseQualifiedElements(filter *expr.Expression) error {
+	return t.nav.ForEachChild(func(index int, child prop.Property) error {
 		t.nav.At(index)
 		if err := t.nav.Error(); err != nil {
 			return err
@@ -152,10 +180,8 @@ func (t traverser) traverseQualifiedElements(filter *expr.Expression) (error, bo
 			return nil
 		}
 
-		isFound = true
 		return t.traverse(filter.Next())
 	})
-	return err, isFound
 }
 
 type elementStrategy func(multiValuedComplex prop.Property) func(index int, child prop.Property) bool
