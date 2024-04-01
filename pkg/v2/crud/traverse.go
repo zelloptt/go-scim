@@ -61,7 +61,7 @@ func primaryOrFirstTraverse(property prop.Property, query *expr.Expression, call
 
 type traverser struct {
 	addByEqFilter        bool                   // true if valueByEqFilter should be updated by the Eq filter
-	valueByEqFilter      interface{}            // value to be updated using the Eq fiter
+	valueByEqFilter      interface{}            // value to be updated using the Eq filter
 	nav                  prop.Navigator         // stateful navigator for the resource being traversed
 	callback             traverseCb             // callback function to be invoked when target is reached
 	callbackUpdatedValue traverseUpdatedValueCb // callback function to be invoked with an updated value when target is reached
