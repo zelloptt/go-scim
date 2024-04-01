@@ -9,8 +9,7 @@ import (
 	"github.com/imulab/go-scim/pkg/v2/spec"
 )
 
-type traverseCb func(nav prop.Navigator) error
-type traverseUpdatedValueCb func(nav prop.Navigator, value interface{}) error
+type traverseCb func(nav prop.Navigator, value interface{}) error
 
 func defaultTraverse(property prop.Property, query *expr.Expression, callback traverseCb) error {
 	tr := traverser{
@@ -39,15 +38,12 @@ func defaultTraverse(property prop.Property, query *expr.Expression, callback tr
 //			"value": "foo@bar.com"
 //		}
 //	]
-//
-// It returns error if there is already a sub property by this filter
-func addByEqFilterTraverse(value interface{}, property prop.Property, query *expr.Expression, callback traverseUpdatedValueCb) error {
+func addByEqFilterTraverse(value interface{}, property prop.Property, query *expr.Expression, callback traverseCb) error {
 	return traverser{
-		valueByEqFilter:      value,
-		addByEqFilter:        true,
-		nav:                  prop.Navigate(property),
-		callbackUpdatedValue: callback,
-		elementStrategy:      selectAllStrategy,
+		value:           value,
+		nav:             prop.Navigate(property),
+		callback:        callback,
+		elementStrategy: selectAllStrategy,
 	}.traverse(query)
 }
 
@@ -60,24 +56,22 @@ func primaryOrFirstTraverse(property prop.Property, query *expr.Expression, call
 }
 
 type traverser struct {
-	addByEqFilter        bool                   // true if valueByEqFilter should be updated by the Eq filter
-	valueByEqFilter      interface{}            // value to be updated using the Eq filter
-	nav                  prop.Navigator         // stateful navigator for the resource being traversed
-	callback             traverseCb             // callback function to be invoked when target is reached
-	callbackUpdatedValue traverseUpdatedValueCb // callback function to be invoked with an updated value when target is reached
-	elementStrategy      elementStrategy        // strategy to select element properties to traverse for multiValued properties
+	value           interface{}     // value to be updated during traversing and returned in the callback
+	nav             prop.Navigator  // stateful navigator for the resource being traversed
+	callback        traverseCb      // callback function to be invoked when target is reached
+	elementStrategy elementStrategy // strategy to select element properties to traverse for multiValued properties
 }
 
 func (t traverser) traverse(query *expr.Expression) error {
 	if query == nil {
-		return t.callback(t.nav)
+		return t.callback(t.nav, t.value)
 	}
 
 	if query.IsRootOfFilter() {
 		if !t.nav.Current().Attribute().MultiValued() {
 			return fmt.Errorf("%w: filter applied to singular attribute", spec.ErrInvalidFilter)
 		}
-		if t.addByEqFilter && query.Token() == expr.Eq {
+		if t.value != nil && query.Token() == expr.Eq {
 			return t.updateValueByEqFilter(query)
 		}
 		return t.traverseQualifiedElements(query)
@@ -93,7 +87,7 @@ func (t traverser) traverse(query *expr.Expression) error {
 func (t traverser) updateValueByEqFilter(query *expr.Expression) error {
 	var err error
 	var filterValue interface{}
-	value := t.valueByEqFilter
+	value := t.value
 	keyValue := ""
 	filterKey := ""
 
@@ -127,10 +121,7 @@ func (t traverser) updateValueByEqFilter(query *expr.Expression) error {
 			return fmt.Errorf("%w: invalid filter value: %w", spec.ErrInvalidFilter, err)
 		}
 	}
-	if t.callbackUpdatedValue == nil {
-		return fmt.Errorf("%w: callbackUpdatedValue not initiated", spec.ErrInternal)
-	}
-	return t.callbackUpdatedValue(t.nav, []interface{}{
+	return t.callback(t.nav, []interface{}{
 		map[string]interface{}{
 			keyValue:  value,
 			filterKey: filterValue,
