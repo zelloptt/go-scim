@@ -22,7 +22,7 @@ func Add(resource *prop.Resource, path string, value interface{}) error {
 	}
 
 	isFound := false
-	err = defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator, _ interface{}) error {
+	err = defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator) error {
 		isFound = true
 		return nav.Add(value).Error()
 	})
@@ -30,8 +30,8 @@ func Add(resource *prop.Resource, path string, value interface{}) error {
 		return err
 	}
 	// If not found - add a new property using the values from eq filter operator
-	return addByEqFilterTraverse(value, resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator, value interface{}) error {
-		return nav.Add(value).Error()
+	return addByEqFilterTraverse(value, resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator) error {
+		return nav.Error()
 	})
 }
 
@@ -48,7 +48,7 @@ func Replace(resource *prop.Resource, path string, value interface{}) error {
 		return err
 	}
 
-	return defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator, _ interface{}) error {
+	return defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator) error {
 		return nav.Replace(value).Error()
 	})
 }
@@ -64,7 +64,7 @@ func Delete(resource *prop.Resource, path string) error {
 		return err
 	}
 
-	return defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator, _ interface{}) error {
+	return defaultTraverse(resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator) error {
 		return nav.Delete().Error()
 	})
 }
