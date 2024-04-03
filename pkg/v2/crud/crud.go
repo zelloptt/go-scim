@@ -29,9 +29,14 @@ func Add(resource *prop.Resource, path string, value interface{}) error {
 		return err
 	}
 	// If not found - add a new property using the values from eq filter operator
-	return addByEqFilterTraverse(value, resource.RootProperty(), skipMainSchemaNamespace(resource, head), func(nav prop.Navigator) error {
-		return nav.Error()
-	})
+	cb := func(nav prop.Navigator, value interface{}) error {
+		if err := nav.Error(); err != nil {
+			return err
+		}
+		nav.Add(value)
+		return nil
+	}
+	return eqFilterTraverse(value, resource.RootProperty(), skipMainSchemaNamespace(resource, head), cb)
 }
 
 // Replace value in SCIM resource at the given SCIM path. If SCIM path is empty, the root of the resource

@@ -9,6 +9,7 @@ import (
 )
 
 type traverseCb func(nav prop.Navigator) error
+type traverseValueModifiedCb func(nav prop.Navigator, value interface{}) error
 
 func defaultTraverse(property prop.Property, query *expr.Expression, callback traverseCb) error {
 	cb := func(nav prop.Navigator, query *expr.Expression) error {
@@ -41,14 +42,13 @@ func defaultTraverse(property prop.Property, query *expr.Expression, callback tr
 //			"value": "foo@bar.com"
 //		}
 //	]
-func addByEqFilterTraverse(value interface{}, property prop.Property, query *expr.Expression, callback traverseCb) error {
+func eqFilterTraverse(value interface{}, property prop.Property, query *expr.Expression, callback traverseValueModifiedCb) error {
 	cb := func(nav prop.Navigator, query *expr.Expression) error {
 		v, err := composeValueByEqFilter(value, query, nav)
 		if err != nil {
 			return err
 		}
-		nav.Add(v)
-		return callback(nav)
+		return callback(nav, v)
 	}
 	return traverser{
 		nav:              prop.Navigate(property),
