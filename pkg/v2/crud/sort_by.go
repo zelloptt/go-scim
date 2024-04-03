@@ -22,7 +22,6 @@ import (
 // 			"givenName": "David"
 // 		}
 // 	}
-//
 // The value "Qiu" will be used to sort the resource. This also applies to any top level singular simple types, as this
 // project treats top-level container as a virtual complex property as well.
 //
