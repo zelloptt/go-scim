@@ -171,6 +171,23 @@ func (s *CrudTestSuite) TestAdd() {
 				assert.Equal(t, "6546579", r.Navigator().Dot("urn:ietf:params:scim:schemas:extension:enterprise:2.0:User").Dot("employeeNumber").Current().Raw())
 			},
 		},
+		{
+			name: "add a non-existent property using eq filter path into an empty complex multiValued property",
+			getResource: func(t *testing.T) *prop.Resource {
+				return prop.NewResource(s.resourceType)
+			},
+			path:  `emails[primary eq true].value`,
+			value: "bar",
+			expect: func(t *testing.T, r *prop.Resource, err error) {
+				assert.Nil(t, err)
+				assert.Equal(t, []interface{}{
+					map[string]interface{}{
+						"value":   "bar",
+						"primary": true,
+					},
+				}, r.Navigator().Dot("emails").Current().Raw())
+			},
+		},
 	}
 
 	for _, test := range tests {
