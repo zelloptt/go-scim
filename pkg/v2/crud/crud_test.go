@@ -172,7 +172,7 @@ func (s *CrudTestSuite) TestAdd() {
 			},
 		},
 		{
-			name: "add a non-existing property using eq filter path into an empty complex multiValued property",
+			name: "add a non-existent property using eq filter path into an empty complex multiValued property",
 			getResource: func(t *testing.T) *prop.Resource {
 				return prop.NewResource(s.resourceType)
 			},
