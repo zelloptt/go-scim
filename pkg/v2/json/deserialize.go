@@ -133,6 +133,10 @@ Skip:
 	return string(d.data[start+1 : end-1]), nil
 }
 
+// For the given dot-separated path - return an array of simple names in stack order.
+// These names could be consumed by the prop.Navigator.Dot() method.
+// For example for the path = "name.givenName"
+// return ["givenName", "name"]
 func (d *deserializeState) getPropertyDotNamesByPath(path string) []string {
 	var names []string
 	var findComplexPath func(child prop.Property) bool

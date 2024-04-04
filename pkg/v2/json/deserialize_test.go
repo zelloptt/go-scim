@@ -228,6 +228,21 @@ func (s *JsonDeserializeTestSuite) TestDeserializeResource() {
 				assert.Equal(t, true, resource.Navigator().Dot("active").Current().Raw())
 			},
 		},
+		{
+			name: "Dot-separated path",
+			json: `
+{
+  "schemas":[
+     "urn:ietf:params:scim:schemas:core:2.0:User"
+  ],
+  "id":"a93d0d53-e9d5-4706-854a-065fae8628bd",
+  "name.givenName":"Ihor"
+}
+`,
+			expect: func(t *testing.T, resource *prop.Resource, err error) {
+				assert.Equal(t, "Ihor", resource.Navigator().Dot("name").Dot("givenName").Current().Raw())
+			},
+		},
 	}
 
 	for _, test := range tests {
